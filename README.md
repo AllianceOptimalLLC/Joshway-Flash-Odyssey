@@ -37,6 +37,8 @@ npm run build
 https://joshway-flash-odyssey.vercel.app  
 Prepared for /flash-odyssey on joshway.app
 
+**Latest Production Deploy:** https://joshway-flash-odyssey.vercel.app (via `vercel --prod --yes --scope allianceoptimal`)
+
 ---
 
 Full production single-file Canvas experience with retro cinematic feel.

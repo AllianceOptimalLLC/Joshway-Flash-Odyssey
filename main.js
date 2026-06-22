@@ -107,14 +107,15 @@ function playMusic(theme) {
   currentMusicTheme = theme;
 
   const notes = {
-    temple: [392, 440, 523, 659, 587, 494, 523, 440], // adventurous warm
-    sky:    [523, 587, 659, 784, 698, 587, 659, 523], // floating heroic
-    cave:   [330, 392, 349, 294, 330, 262, 294, 330], // moody eerie
-    crystal:[440, 523, 659, 587, 784, 698, 880, 784], // mysterious sparkling
-    final:  [392, 523, 659, 784, 880, 784, 659, 523]  // triumphant
+    temple: [392, 440, 523, 659, 587, 494, 523, 440, 494, 440], // adventurous warm heroic
+    sky:    [523, 587, 659, 784, 698, 587, 659, 523, 784, 698], // floating heroic uplifting
+    cave:   [330, 392, 349, 294, 330, 262, 294, 330, 277, 294], // moody eerie deep
+    crystal:[440, 523, 659, 587, 784, 698, 880, 784, 659, 880], // mysterious sparkling wonder
+    final:  [392, 523, 659, 784, 880, 784, 659, 523, 392, 523, 880]  // triumphant cinematic
   };
   const seq = notes[theme] || notes.temple;
   let i = 0;
+  let beat = 0;
 
   function playNote() {
     if (!audioCtx || isMuted || gameState !== 'playing') return;
@@ -122,21 +123,37 @@ function playMusic(theme) {
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     const f2 = audioCtx.createOscillator();
+    const bass = audioCtx.createOscillator();
     o.type = (theme === 'cave' || theme === 'final') ? 'sawtooth' : 'triangle';
     f2.type = 'sine';
+    bass.type = 'sine';
     o.frequency.value = f;
-    f2.frequency.value = f * 1.5;
-    g.gain.value = (theme === 'cave') ? 0.09 : 0.13;
-    o.connect(g); f2.connect(g); g.connect(audioCtx.destination);
-    o.start(); f2.start();
+    f2.frequency.value = f * (theme === 'cave' ? 1.25 : 1.5);
+    bass.frequency.value = f / 2;
+    const vol = (theme === 'cave') ? 0.08 : (theme === 'final' ? 0.12 : 0.11);
+    g.gain.value = vol;
+    o.connect(g); f2.connect(g); bass.connect(g); g.connect(audioCtx.destination);
+    o.start(); f2.start(); bass.start();
+    const decay = (theme === 'sky' || theme === 'crystal') ? 0.29 : 0.24;
     setTimeout(() => {
-      g.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.22);
-      o.stop(audioCtx.currentTime + 0.3); f2.stop(audioCtx.currentTime + 0.3);
-    }, 240);
+      g.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + decay);
+      o.stop(audioCtx.currentTime + 0.32); f2.stop(audioCtx.currentTime + 0.32); bass.stop(audioCtx.currentTime + 0.32);
+    }, 260);
     i++;
+    beat++;
+    // occasional chord flourish for polish
+    if (beat % 7 === 0 && (theme === 'sky' || theme === 'final')) {
+      const chord = audioCtx.createOscillator();
+      const cg = audioCtx.createGain();
+      chord.type = 'triangle'; chord.frequency.value = f * 2.01;
+      cg.gain.value = 0.06;
+      chord.connect(cg); cg.connect(audioCtx.destination);
+      chord.start();
+      setTimeout(()=>{ cg.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime+0.4); chord.stop(audioCtx.currentTime+0.45); }, 280);
+    }
   }
   playNote();
-  musicInterval = setInterval(playNote, (theme === 'cave' ? 420 : 280));
+  musicInterval = setInterval(playNote, (theme === 'cave' ? 410 : (theme === 'final' ? 255 : 275)));
 }
 
 function stopMusic() {
@@ -263,6 +280,10 @@ const LEVELS = [
     doors: [
       {x:700,y:205,w:32,h:55, locked:true, requires:7 }
     ],
+    moving: [
+      {plat: 5, axis:'y', speed:0.6, range:48, baseY:255},
+      {plat: 8, axis:'x', speed:1.05, range:65, baseX:1190}
+    ],
     exitX: 1650
   },
   {
@@ -304,6 +325,10 @@ const LEVELS = [
     ],
     doors: [
       {x:1000,y:190,w:34,h:65, locked:true, requires:9 }
+    ],
+    moving: [
+      {plat: 3, axis:'x', speed:0.85, range:75, baseX:500},
+      {plat: 10, axis:'y', speed:0.75, range:60, baseY:195}
     ],
     exitX: 1820
   },
@@ -347,6 +372,10 @@ const LEVELS = [
     ],
     doors: [
       {x:850,y:180,w:32,h:60, locked:true, requires:10 }
+    ],
+    moving: [
+      {plat: 6, axis:'x', speed:1.2, range:80, baseX:880},
+      {plat: 12, axis:'y', speed:0.65, range:52, baseY:215}
     ],
     exitX: 1890,
     isFinal: true
@@ -921,11 +950,16 @@ function die() {
     player.y = player.checkpointY;
     player.vx = 0; player.vy = 0;
     player.onGround = false;
-    // Reset some enemies close
+    player.crouching = false; player.rollTimer=0;
+    // Reset enemies that were defeated and restore original
     const L = LEVELS[currentLevel];
     enemies.forEach((e, i) => {
-      if (e.x < -500) { e.x = L.enemies[i].x; e.y = L.enemies[i].y; e.stunned = 0; e.vx = L.enemies[i].vx; }
+      if (e.x < -500 && L.enemies[i]) {
+        e.x = L.enemies[i].x; e.y = L.enemies[i].y; e.stunned = 0; e.vx = L.enemies[i].vx || 0.6;
+      }
     });
+    // Un-possess and restore npcs if needed
+    if (player.isPossessing) releasePossess();
   }
 }
 
