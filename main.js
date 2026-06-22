@@ -722,6 +722,7 @@ function update() {
         player.vy = -2.2 * effScale;
         player.vx *= 0.3;
         player.onGround = false;
+        if (levelTimer % 11 === 0) playSFX(520, 0.04, 'sine', 0.11);
       }
     }
 
@@ -1046,6 +1047,7 @@ function completeLevel() {
     ORBS COLLECTED: ${orbs}/${totalOrbs}<br>
     TIME BONUS: +${timeBonus}<br>
     ORB BONUS: +${orbBonus} &nbsp; ${secretBonus ? '★ SECRET COURAGE BONUS +' + secretBonus : ''}<br>
+    ${comboBonus ? 'COMBO BONUS: +' + comboBonus + '<br>' : ''}
     LEVEL SCORE: ${score.toString().padStart(6,'0')}
   `;
   recap.textContent = L.story + (currentLevel === 4 ? " Joshway's cape soared higher than ever. The lands are safe." : " The journey continues...");
