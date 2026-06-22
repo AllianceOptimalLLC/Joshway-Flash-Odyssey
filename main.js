@@ -223,7 +223,8 @@ const LEVELS = [
     traps: [
       {x:450,y:198,w:30,h:62,type:'saw',vx:1.1},
       {x:770,y:218,w:26,h:52,type:'saw',vx:-0.95},
-      {x:1180,y:250,w:42,h:10,type:'spikes',active:true}
+      {x:1180,y:250,w:42,h:10,type:'spikes',active:true},
+      {x:630,y:270,w:38,h:12,type:'bouncer',bouncy:true,active:true} // funny non-lethal
     ],
     enemies: [
       {x:340,y:240,w:20,h:24,vx:0.9,type:'spinner'},
@@ -354,7 +355,8 @@ const LEVELS = [
       {x:840,y:238,w:24,h:55,type:'saw',vx:-0.95},
       {x:1090,y:263,w:38,h:10,type:'spikes',active:true},
       {x:1510,y:178,w:32,h:62,type:'saw',vx:1.05},
-      {x:1700,y:253,w:26,h:58,type:'saw',vx:-1.15}
+      {x:1700,y:253,w:26,h:58,type:'saw',vx:-1.15},
+      {x:1020,y:250,w:34,h:12,type:'bouncer',bouncy:true,active:true}
     ],
     enemies: [
       {x:180,y:260,w:20,h:24,vx:0.6,type:'grunt'},
@@ -804,8 +806,17 @@ function update() {
       const hit = player.x < t.x + t.w && player.x + player.w > t.x &&
                   player.y + hitH > t.y && player.y < t.y + t.h + 4;
       if (hit && t.active !== false) {
-        die();
-        return;
+        if (t.type === 'bouncer' || t.bouncy) {
+          // funny non-lethal bounce - Joshway comic style
+          player.vy = -13.5;
+          player.x += (player.vx > 0 ? 9 : -9);
+          playSFX(180, 0.1, 'square', 0.3, 880);
+          addFloatingText(player.x - cameraX, player.y - 8, 'BOING!', '#facc15');
+          createParticle(t.x + t.w/2, t.y, 0, -4, 12, '#67e8f9', 4);
+        } else {
+          die();
+          return;
+        }
       }
     }
 
