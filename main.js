@@ -18,6 +18,8 @@ let levelTimer = 0;
 let highScores = {};
 let isMuted = false;
 let unlockedLevels = [true, false, false, false, false];
+let combo = 0;
+let comboTimer = 0;
 
 let keys = {};
 let lastKeys = {};
@@ -440,6 +442,7 @@ function initLevel(lvlIdx) {
   coyoteTime = 0; jumpBuffer = 0; slowTime = 0; climbX = null;
 
   orbs = 0; totalOrbs = L.totalOrbs; timeLeft = L.time; levelTimer = 0;
+  combo = 0; comboTimer = 0;
 
   // Copy level geometry
   platforms = L.platforms.map(p => ({...p}));
@@ -449,7 +452,14 @@ function initLevel(lvlIdx) {
   enemies = L.enemies.map(e => ({...e, stunned:0}));
   npcs = L.npcs.map(n => ({...n, possessed:false}));
   doors = L.doors.map(d => ({...d, open:false}));
-  movingPlatforms = (L.moving || []).map(m => ({...m, phase: m.phase || 0}));
+  movingPlatforms = (L.moving || []).map(m => {
+    const mp = {...m, phase: m.phase || 0};
+    if (platforms[mp.plat]) {
+      mp.baseX = mp.baseX !== undefined ? mp.baseX : platforms[mp.plat].x;
+      mp.baseY = mp.baseY !== undefined ? mp.baseY : platforms[mp.plat].y;
+    }
+    return mp;
+  });
 
   // Setup camera
   cameraX = Math.max(0, player.x - 280);
@@ -467,6 +477,13 @@ function initLevel(lvlIdx) {
   setTimeout(() => playMusic(L.music), 120);
 
   gameState = 'playing';
+
+  // Initial story flavor text for cinematic feel
+  setTimeout(() => {
+    if (gameState === 'playing') {
+      addFloatingText(140, 72, LEVELS[currentLevel].name, '#facc15');
+    }
+  }, 180);
 }
 
 function applySwitchEffect(sw) {
@@ -544,22 +561,24 @@ function releasePossess() {
   if (!player.isPossessing || !player.possessedEntity) return;
   const ent = player.possessedEntity;
   // Return player near entity
-  player.x = ent.x || ent.originalX || player.x;
-  player.y = (ent.y || ent.originalY || player.y) - 10;
-  player.vy = -3;
+  player.x = (ent.x || ent.originalX || player.x);
+  player.y = (ent.y || ent.originalY || player.y) - 8;
+  player.vy = -4.2;
+  player.vx = (ent.vx || 0) * 0.3;
   // Restore NPC or enemy
   if (ent.type === 'bat' || ent.color) {
-    const npc = npcs.find(nn => Math.abs(nn.originalX - ent.originalX) < 10);
-    if (npc) { npc.possessed = false; npc.x = player.x; npc.y = player.y; }
+    const npc = npcs.find(nn => Math.abs((nn.originalX||nn.x) - (ent.originalX||ent.x)) < 18) || npcs[0];
+    if (npc) { npc.possessed = false; npc.x = player.x + 8; npc.y = player.y + 6; }
   } else {
     for (let e of enemies) {
-      if (e.x < -1000) { e.x = player.x; e.y = player.y + 5; e.stunned = 30; break; }
+      if (e.x < -100) { e.x = player.x - 12; e.y = player.y + 4; e.stunned = 35; e.vx = 0; break; }
     }
   }
   player.isPossessing = false;
   player.possessTime = 0;
   player.possessedEntity = null;
   playSFX(210, 0.2, 'sine', 0.3);
+  createParticle(player.x, player.y, 0, -1.5, 12, '#c084fc', 3);
 }
 
 function performAttack() {
@@ -587,8 +606,9 @@ function performAttack() {
       if (e.type === 'spinner' || e.type === 'grunt') {
         e.stunned = 70;
         e.vx = 0;
-        score += 180;
-        addFloatingText(e.x - cameraX, e.y - 12, 'STUNNED', '#facc15');
+        combo = Math.min(5, combo + 1); comboTimer = 55;
+        score += Math.floor(180 * (1 + combo * 0.06));
+        addFloatingText(e.x - cameraX, e.y - 12, 'STUNNED' + (combo>1?'!':''), '#facc15');
         createParticle(e.x + 10, e.y + 8, 0, -2, 14, '#eab308');
       }
     }
@@ -615,6 +635,10 @@ function update() {
     if (timeLeft === 30) playSFX(440, 0.15, 'square', 0.2);
   }
   if (timeLeft <= 0) { die(); return; }
+
+  // Combo decay for scoring depth
+  if (comboTimer > 0) comboTimer--;
+  else if (combo > 0) { combo = Math.max(0, combo - 1); comboTimer = 45; }
 
   // Time slow (focus mode) decays, affects speeds
   if (slowTime > 0) slowTime--;
@@ -839,10 +863,12 @@ function update() {
           // Defeat
           e.x = -600;
           player.vy = -6.5;
-          score += 280;
+          combo = Math.min(8, combo + 1); comboTimer = 70;
+          const killPts = Math.floor(280 * (1 + combo * 0.1));
+          score += killPts;
           playSFX(360, 0.15, 'square', 0.28);
           createParticle(e.x + 12, e.y + 4, 0, -3, 18, '#f97316');
-          addFloatingText(e.x - cameraX, e.y - 4, '+280', '#4ade80');
+          addFloatingText(e.x - cameraX, e.y - 4, '+K.O. '+(combo>1? 'x'+combo:''), '#4ade80');
         } else {
           die(); return;
         }
@@ -857,10 +883,15 @@ function update() {
         if (Math.hypot(dx, dy) < 19) {
           c.collected = true;
           orbs++;
-          score += (orbs % 3 === 0 ? 180 : 110);
+          combo = Math.min(8, combo + 1); comboTimer = 65;
+          const orbPts = Math.floor((orbs % 3 === 0 ? 180 : 110) * (1 + combo * 0.08));
+          score += orbPts;
           playSFX(920 + (orbs % 4) * 30, 0.18, 'sine', 0.34);
           createParticle(c.x, c.y, 0, -2.2, 22, '#fde047', 4);
-          addFloatingText(c.x - cameraX, c.y - 14, '+ORB', '#facc15');
+          let txt = '+ORB' + (combo > 2 ? 'x'+combo : '');
+          if (orbs === 3) txt = 'COURAGE!';
+          else if (orbs === totalOrbs - 1) txt = 'ALMOST!';
+          addFloatingText(c.x - cameraX, c.y - 14, txt, '#facc15');
         }
       }
     });
@@ -923,14 +954,26 @@ function update() {
   });
   // Autonomous moving platforms (horizontal/vertical loops - great for puzzles)
   movingPlatforms.forEach(mp => {
+    if (!platforms[mp.plat]) return;
+    const plat = platforms[mp.plat];
+    const prevX = plat.x, prevY = plat.y;
     mp.phase = (mp.phase + (mp.speed || 0.8) * timeScale) % (mp.range * 2 || 160);
     const offset = Math.sin(mp.phase / (mp.range || 80) * Math.PI) * (mp.range / 2 || 40);
-    const baseX = mp.baseX !== undefined ? mp.baseX : platforms[mp.plat].x;
-    const baseY = mp.baseY !== undefined ? mp.baseY : platforms[mp.plat].y;
-    if (mp.axis === 'x' && platforms[mp.plat]) {
-      platforms[mp.plat].x = baseX + offset;
-    } else if (platforms[mp.plat]) {
-      platforms[mp.plat].y = baseY + offset;
+    const baseX = mp.baseX !== undefined ? mp.baseX : plat.x;
+    const baseY = mp.baseY !== undefined ? mp.baseY : plat.y;
+    if (mp.axis === 'x') {
+      plat.x = baseX + offset;
+    } else {
+      plat.y = baseY + offset;
+    }
+    // keep bases stable
+    if (!mp._basesLocked) { mp.baseX = baseX; mp.baseY = baseY; mp._basesLocked = true; }
+    // Sticky player on moving platform (robust platforming)
+    if (player.onGround && player.y + player.h >= prevY - 1 && player.y + player.h <= prevY + plat.h + 2 &&
+        player.x + player.w > prevX && player.x < prevX + plat.w) {
+      player.x += (plat.x - prevX);
+      player.y += (plat.y - prevY);
+      if (mp.axis === 'y' && plat.y < prevY) player.vy = -0.5; // ride up
     }
   });
 
@@ -983,7 +1026,8 @@ function completeLevel() {
   const timeBonus = Math.max(0, timeLeft * 18);
   const orbBonus = orbs * 65;
   const secretBonus = (orbs === totalOrbs ? 520 : 0);
-  const totalBonus = timeBonus + orbBonus + secretBonus;
+  const comboBonus = Math.floor(combo * 42);
+  const totalBonus = timeBonus + orbBonus + secretBonus + comboBonus;
   score += totalBonus;
 
   const isNewHigh = saveHighScore(currentLevel, score);
@@ -1133,6 +1177,14 @@ function draw() {
       ctx.beginPath();
       ctx.arc(sx + t.w/2, t.y + (t.h||13)/2 , 7, 0, Math.PI*2);
       ctx.stroke();
+    } else if (t.type === 'bouncer' || t.bouncy) {
+      // funny bouncy pad
+      ctx.fillStyle = '#854d0e';
+      ctx.fillRect(sx, t.y, t.w, 11);
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(sx + 4, t.y - 3, t.w - 8, 5);
+      ctx.fillStyle = '#451a03';
+      for (let k=0; k<3; k++) ctx.fillRect(sx + 7 + k*8, t.y + 2, 3, 5);
     }
   });
 
@@ -1203,6 +1255,7 @@ function draw() {
     if (player.attackTimer > 0) { fx = 5 * 32; } // attack frame approx
     else if (!player.onGround) { fx = 2 * 32; }
     else if (player.crouching || player.rollTimer > 0) { fx = 6 * 32; fy = 0; }
+    else if (player.canGlide) { fx = 2 * 32; } // use jump pose for glide
     else if (Math.abs(player.vx) > 0.8) { fx = (frame % 3 + 1) * 32; }
     else { fx = 0; }
 
@@ -1216,9 +1269,13 @@ function draw() {
     }
 
     // Cape flow animation overlay
-    ctx.fillStyle = 'rgba(249,115,22,0.65)';
-    const capeSway = Math.sin(player.animFrame * 0.6) * 3;
+    ctx.fillStyle = player.canGlide ? 'rgba(249,115,22,0.95)' : 'rgba(249,115,22,0.65)';
+    const capeSway = Math.sin(player.animFrame * 0.6) * (player.canGlide ? 5 : 3);
     ctx.fillRect(player.facing > 0 ? -4 : player.w - 4, 10, 10, player.h - 12 + capeSway);
+    if (player.canGlide) {
+      ctx.fillStyle = 'rgba(250,204,21,0.4)';
+      ctx.fillRect(player.facing > 0 ? -2 : player.w - 2 , 18, 6, player.h - 20);
+    }
   }
   ctx.restore();
 
@@ -1263,6 +1320,16 @@ function draw() {
   grad.addColorStop(1, 'rgba(5,8,18,0.35)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
+
+  // Cinematic slow-mo overlay
+  if (slowTime > 0) {
+    ctx.fillStyle = 'rgba(103, 232, 249, 0.12)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(103,232,249,0.5)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(6, 6, w-12, h-12);
+    ctx.lineWidth = 1;
+  }
 }
 
 // === UI / HUD / OVERLAYS ===
@@ -1276,8 +1343,11 @@ function updateHUD() {
   if (lvlName) lvlName.textContent = (LEVELS[currentLevel] || {}).name || 'TEMPLE';
   if (orbEl) orbEl.textContent = `${String(orbs).padStart(2,'0')}/${totalOrbs}`;
   if (liveEl) liveEl.textContent = lives;
-  if (scoreEl) scoreEl.textContent = String(score).padStart(6, '0');
-  if (timeEl) timeEl.textContent = timeLeft;
+  if (scoreEl) scoreEl.textContent = String(score).padStart(6, '0') + (combo > 1 ? ' x'+combo : '');
+  if (timeEl) {
+    timeEl.textContent = timeLeft + (slowTime > 0 ? '★' : '');
+    if (slowTime > 0) timeEl.style.color = '#67e8f9'; else timeEl.style.color = '';
+  }
 }
 
 function showOverlay(id) {
