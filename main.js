@@ -25,6 +25,10 @@ let cameraX = 0;
 let cameraTarget = 0;
 let particles = [];
 let floatingTexts = [];
+let coyoteTime = 0;
+let jumpBuffer = 0;
+let slowTime = 0; // brief time-slow for precision platforming
+let climbX = null; // for climbable surfaces
 
 // Player with full mechanics
 const player = {
@@ -33,7 +37,8 @@ const player = {
   crouching: false, rollTimer: 0, attackTimer: 0,
   jumpHeld: false, animFrame: 0, frameTimer: 0,
   possessTime: 0, isPossessing: false, possessedEntity: null,
-  checkpointX: 80, checkpointY: 320
+  checkpointX: 80, checkpointY: 320,
+  canGlide: false
 };
 
 // Level runtime objects (populated per level)
@@ -148,17 +153,18 @@ function toggleMute() {
 const LEVELS = [
   {
     id: 0, name: "TEMPLE OF COURAGE", music: 'temple', time: 135, width: 1680,
-    story: "Ancient stone halls. Levers move platforms. Stomp the temple grunts. Collect every glowing orb.",
+    story: "Ancient stone halls. Levers move platforms. Stomp the temple grunts. Collect every glowing orb. Roll under low or glide with cape.",
     totalOrbs: 12,
     startX: 60, startY: 300,
     platforms: [
       {x:0,y:340,w:220,h:22}, {x:290,y:300,w:130,h:18}, {x:460,y:250,w:95,h:18}, {x:610,y:310,w:160,h:20},
       {x:830,y:270,w:70,h:18}, {x:950,y:220,w:180,h:20}, {x:1170,y:280,w:85,h:18}, {x:1300,y:240,w:110,h:20},
-      {x:1480,y:310,w:200,h:22}
+      {x:1480,y:310,w:200,h:22}, {x:520,y:185,w:60,h:14} // secret upper path
     ],
     switches: [
       {x:330,y:270, active:false, moves:[{plat:1, y:-70}] },
-      {x:720,y:280, active:false, moves:[{plat:4, y:-55}] }
+      {x:720,y:280, active:false, moves:[{plat:4, y:-55}] },
+      {x:580,y:160, active:false, moves:[{plat:9, y:55}] } // upper secret
     ],
     traps: [
       {x:540,y:328,w:55,h:12,type:'spikes',active:true},
@@ -172,13 +178,15 @@ const LEVELS = [
     npcs: [
       {x:690,y:195,w:18,h:18,type:'bat', color:'#a5f3fc'}
     ],
-    collectibles: [ // carefully placed, some secrets
+    collectibles: [ // carefully placed, some secrets, multiple paths
       {x:165,y:260},{x:340,y:200},{x:505,y:160},{x:650,y:240},{x:790,y:165},{x:910,y:140},
-      {x:1050,y:155},{x:1220,y:205},{x:1390,y:165},{x:1520,y:235},{x:1610,y:255},{x:1440,y:140} // secret high one
+      {x:1050,y:155},{x:1220,y:205},{x:1390,y:165},{x:1520,y:235},{x:1610,y:255},{x:1440,y:140},
+      {x:535,y:130} // secret upper path orb
     ],
     doors: [
       {x:1130,y:240,w:38,h:70, locked:true, requires:6 }
     ],
+    moving: [ {plat: 5, axis:'x', speed:1.1, range:70, baseX: 950 } ], // horizontal moving bridge puzzle
     exitX: 1580
   },
   {
@@ -213,6 +221,10 @@ const LEVELS = [
       {x:1010,y:120},{x:1160,y:175},{x:1290,y:85},{x:1470,y:155},{x:1550,y:230},{x:1670,y:210},{x:1420,y:100}
     ],
     doors: [],
+    moving: [
+      {plat: 4, axis:'y', speed:0.7, range:55, baseY:170}, // floating lift
+      {plat: 9, axis:'x', speed:0.9, range:90, baseX:1400}
+    ],
     exitX: 1720
   },
   {
@@ -393,6 +405,8 @@ function initLevel(lvlIdx) {
   player.attackTimer=0; player.jumpHeld=false; player.possessTime=0;
   player.isPossessing=false; player.possessedEntity=null; player.facing=1;
   player.checkpointX = player.x; player.checkpointY = player.y;
+  player.canGlide = false;
+  coyoteTime = 0; jumpBuffer = 0; slowTime = 0; climbX = null;
 
   orbs = 0; totalOrbs = L.totalOrbs; timeLeft = L.time; levelTimer = 0;
 
@@ -404,7 +418,7 @@ function initLevel(lvlIdx) {
   enemies = L.enemies.map(e => ({...e, stunned:0}));
   npcs = L.npcs.map(n => ({...n, possessed:false}));
   doors = L.doors.map(d => ({...d, open:false}));
-  movingPlatforms = [];
+  movingPlatforms = (L.moving || []).map(m => ({...m, phase: m.phase || 0}));
 
   // Setup camera
   cameraX = Math.max(0, player.x - 280);
@@ -571,6 +585,10 @@ function update() {
   }
   if (timeLeft <= 0) { die(); return; }
 
+  // Time slow (focus mode) decays, affects speeds
+  if (slowTime > 0) slowTime--;
+  const timeScale = slowTime > 0 ? 0.4 : 1.0;
+
   // === POSSESS MODE CONTROL ===
   let controlledX = player.x;
   let controlledY = player.y;
@@ -579,22 +597,32 @@ function update() {
   if (player.isPossessing && player.possessedEntity) {
     controlling = true;
     const ent = player.possessedEntity;
-    const spd = 2.1;
+    const spd = 2.3 * timeScale;
     if (keys['ArrowLeft'] || keys['KeyA']) { ent.vx = -spd; player.facing = -1; }
     else if (keys['ArrowRight'] || keys['KeyD']) { ent.vx = spd; player.facing = 1; }
-    else ent.vx *= 0.7;
-    if ((keys['Space'] || keys['KeyW']) && !ent.onGround) { ent.vy = -7.5; }
-    ent.vy = (ent.vy || 0) + 0.48;
-    ent.x += ent.vx;
+    else ent.vx *= 0.72;
+    const jumpP = keys['Space'] || keys['KeyW'] || keys['ArrowUp'];
+    if (jumpP && ent.onGround) { ent.vy = -7.8; ent.onGround = false; playSFX(520, 0.09, 'sine', 0.2); }
+    ent.vy = (ent.vy || 0) + 0.52 * timeScale;
+    if (ent.vy > 9) ent.vy = 9;
+    ent.x += ent.vx * timeScale;
     ent.y += ent.vy;
-    ent.onGround = false;
 
-    // Simple possess collision with world
+    // Robust possess collision (AABB sep Y then X later)
+    ent.onGround = false;
     for (let p of platforms) {
       if (ent.x < p.x + p.w && ent.x + 18 > p.x && ent.y + 18 > p.y && ent.y < p.y + p.h) {
-        if (ent.vy > 0) { ent.y = p.y - 18; ent.vy = 0; ent.onGround = true; }
+        if (ent.vy > 0) {
+          ent.y = p.y - 18; ent.vy = 0; ent.onGround = true;
+        } else if (ent.vy < 0) {
+          ent.y = p.y + p.h; ent.vy = 0;
+        }
       }
     }
+    // horizontal clamp in possess
+    if (ent.x < 10) ent.x = 10;
+    if (ent.x > L.width - 30) ent.x = L.width - 30;
+
     controlledX = ent.x; controlledY = ent.y;
     player.possessTime--;
     if (player.possessTime <= 0) releasePossess();
@@ -605,8 +633,11 @@ function update() {
 
   // === PLAYER MOVEMENT (when not possessing) ===
   if (!player.isPossessing) {
-    let speed = player.crouching ? 1.35 : 2.65;
-    if (player.rollTimer > 0) speed = 3.4;
+    // Time slow affects movement feel
+    const effScale = timeScale;
+
+    let speed = (player.crouching ? 1.3 : 2.75) * effScale;
+    if (player.rollTimer > 0) speed = 3.5 * effScale;
 
     if (keys['ArrowLeft'] || keys['KeyA']) {
       player.vx = -speed;
@@ -615,51 +646,96 @@ function update() {
       player.vx = speed;
       player.facing = 1;
     } else {
-      player.vx *= 0.76;
+      player.vx *= (player.onGround ? 0.68 : 0.82);
     }
 
     // Crouch + roll
     const wantCrouch = keys['ShiftLeft'] || keys['ShiftRight'] || keys['ArrowDown'] || keys['KeyS'];
     player.crouching = wantCrouch;
-    if (wantCrouch && Math.abs(player.vx) > 1.8 && player.onGround && player.rollTimer <= 0) {
-      player.rollTimer = 22;
+    if (wantCrouch && Math.abs(player.vx) > 1.6 && player.onGround && player.rollTimer <= 0) {
+      player.rollTimer = 20;
       playSFX(310, 0.1, 'square', 0.18);
     }
     if (player.rollTimer > 0) player.rollTimer--;
 
-    // Variable jump (hold for height - Prince of Persia style)
-    const jumpPressed = (keys['Space'] || keys['ArrowUp'] || keys['KeyW']) && !lastKeys['Space'] && !lastKeys['ArrowUp'] && !lastKeys['KeyW'];
-    if (jumpPressed && player.onGround) {
-      player.vy = -12.2;
+    // CLIMB: simple ledge/vine climb (near vertical edges or special)
+    let isClimbing = false;
+    if (climbX !== null && (keys['ArrowUp'] || keys['KeyW'])) {
+      // detect if touching climbable (we set climbX in collision pass)
+      if (Math.abs(player.x + player.w/2 - climbX) < 18) {
+        isClimbing = true;
+        player.vy = -2.2 * effScale;
+        player.vx *= 0.3;
+        player.onGround = false;
+      }
+    }
+
+    // Variable jump with coyote time + jump buffer (responsive Prince of Persia feel)
+    const jumpKey = keys['Space'] || keys['ArrowUp'] || keys['KeyW'];
+    const jumpPressed = jumpKey && !lastKeys['Space'] && !lastKeys['ArrowUp'] && !lastKeys['KeyW'];
+    if (jumpPressed) jumpBuffer = 8;
+    if (jumpBuffer > 0) jumpBuffer--;
+
+    // Coyote grace
+    if (player.onGround) coyoteTime = 7;
+    else if (coyoteTime > 0) coyoteTime--;
+
+    if ((jumpBuffer > 0) && (coyoteTime > 0 || player.onGround) && !isClimbing) {
+      player.vy = -12.6;
       player.onGround = false;
       player.jumpHeld = true;
-      playSFX(player.crouching ? 480 : 680, 0.13, 'sine', 0.26);
+      coyoteTime = 0; jumpBuffer = 0;
+      playSFX(player.crouching ? 470 : 710, 0.13, 'sine', 0.27);
       createParticle(player.x + 14, player.y + player.h - 2, player.vx * -0.3, 0.6, 9, '#fde047', 2);
     }
-    if (!keys['Space'] && !keys['ArrowUp'] && !keys['KeyW']) player.jumpHeld = false;
-
-    // Hold boost / release dampen
-    if (player.jumpHeld && player.vy < -1.5) {
-      player.vy -= 0.32;
-    } else if (!player.jumpHeld && player.vy < -0.5) {
-      player.vy *= 0.965;
+    if (!jumpKey) {
+      player.jumpHeld = false;
+      jumpBuffer = 0;
     }
 
-    // Gravity + apply
-    player.vy += 0.56;
+    // Hold for higher jump + glide when cape held in air
+    if (player.jumpHeld && player.vy < -1.2) {
+      player.vy -= 0.38 * effScale;
+    } else if (!player.jumpHeld && player.vy < -0.6) {
+      player.vy *= 0.96;
+    }
+
+    // CAPE GLIDE: hold X/C in air for slow descent like Flashback cape
+    const capeHeld = keys['KeyX'] || keys['KeyC'];
+    if (!player.onGround && capeHeld && player.vy > 1.2 && player.attackTimer <= 0) {
+      player.vy = Math.min(player.vy, 1.6); // slow fall
+      player.vx *= 0.95;
+      player.canGlide = true;
+      if (Math.random() < 0.35) createParticle(player.x + 8, player.y + 10, player.facing * -0.8, 1.2, 6, '#f97316', 2);
+    } else {
+      player.canGlide = false;
+    }
+
+    // Gravity + apply, scaled
+    player.vy += 0.58 * effScale;
     if (player.vy > 11) player.vy = 11;
 
+    // Apply movement (X first, then Y for better platforming)
+    const prevX = player.x;
     player.x += player.vx;
-    player.y += player.vy;
-
-    // === COLLISIONS ===
+    // X collisions separate
     player.onGround = false;
-
-    // Platforms
     for (let p of platforms) {
       if (player.x + player.w > p.x && player.x < p.x + p.w &&
           player.y + player.h > p.y && player.y < p.y + p.h) {
-        if (player.vy > 0 && player.y + player.h - player.vy <= p.y + 2) {
+        if (player.vx > 0) player.x = p.x - player.w;
+        else if (player.vx < 0) player.x = p.x + p.w;
+        player.vx = 0;
+      }
+    }
+
+    player.y += player.vy;
+
+    // === PRECISE COLLISIONS Y ===
+    for (let p of platforms) {
+      if (player.x + player.w > p.x && player.x < p.x + p.w &&
+          player.y + player.h > p.y && player.y < p.y + p.h) {
+        if (player.vy > 0) {
           player.y = p.y - player.h;
           player.vy = 0;
           player.onGround = true;
@@ -677,13 +753,23 @@ function update() {
 
     // Crouch hitbox adjust (low passages)
     let hitH = player.crouching || player.rollTimer > 0 ? player.h * 0.68 : player.h;
-    // Re-apply vertical correction after crouch size
-    if (player.crouching && player.onGround) player.y += (player.h - hitH) * 0.4;
+    if (player.crouching && player.onGround) player.y += (player.h - hitH) * 0.35;
+
+    // Detect climbables near player (vertical platforms edges or doors as makeshift)
+    climbX = null;
+    for (let p of platforms) {
+      const nearLeft = Math.abs((player.x + player.w) - p.x) < 6 && player.y + player.h > p.y && player.y < p.y + p.h;
+      const nearRight = Math.abs(player.x - (p.x + p.w)) < 6 && player.y + player.h > p.y && player.y < p.y + p.h;
+      if ((nearLeft || nearRight) && !player.onGround) {
+        climbX = nearLeft ? p.x : p.x + p.w;
+        break;
+      }
+    }
 
     // === TRAPS ===
     for (let t of traps) {
       if (t.type === 'saw') {
-        t.x += t.vx || 0.9;
+        t.x += (t.vx || 0.9) * timeScale;
         if (t.x < 200 || t.x > L.width - 120) t.vx = -(t.vx || 0.9);
       }
       const hit = player.x < t.x + t.w && player.x + player.w > t.x &&
@@ -698,9 +784,9 @@ function update() {
     for (let e of enemies) {
       if (e.x < -500) continue;
       // Patrol
-      e.x += (e.vx || 0.6);
+      e.x += (e.vx || 0.6) * timeScale;
       if (e.x < 40 || e.x > L.width - 80) e.vx = -(e.vx || 0.6);
-      if (e.stunned > 0) { e.stunned--; e.vx *= 0.6; continue; }
+      if (e.stunned > 0) { e.stunned = Math.max(0, e.stunned - 1); e.vx *= 0.6; continue; }
 
       // Collision
       const dx = player.x - e.x;
@@ -757,6 +843,13 @@ function update() {
       performAttack();
     }
 
+    // Time slow / Focus mode (precision platforming aid)
+    if ((keys['KeyQ'] || keys['KeyZ']) && !lastKeys['KeyQ'] && !lastKeys['KeyZ'] && slowTime <= 0) {
+      slowTime = 95; // brief precision window
+      playSFX(280, 0.3, 'sine', 0.25);
+      createParticle(player.x + 14, player.y + 8, 0, -1, 18, '#a5f3fc', 3);
+    }
+
     // Possess / Interact (E)
     if (keys['KeyE'] && !lastKeys['KeyE']) {
       if (!tryInteract()) {
@@ -780,12 +873,24 @@ function update() {
   cameraTarget = targetCam;
   cameraX += (cameraTarget - cameraX) * 0.12;
 
-  // Update dynamic platforms
+  // Update dynamic platforms (switches + autonomous moving for puzzles)
   platforms.forEach(p => {
     if (p.targetY !== undefined) {
       const diff = p.targetY - p.y;
-      p.y += Math.sign(diff) * Math.min(1.8, Math.abs(diff));
+      p.y += Math.sign(diff) * Math.min(1.9, Math.abs(diff));
       if (Math.abs(diff) < 2) p.y = p.targetY;
+    }
+  });
+  // Autonomous moving platforms (horizontal/vertical loops - great for puzzles)
+  movingPlatforms.forEach(mp => {
+    mp.phase = (mp.phase + (mp.speed || 0.8) * timeScale) % (mp.range * 2 || 160);
+    const offset = Math.sin(mp.phase / (mp.range || 80) * Math.PI) * (mp.range / 2 || 40);
+    const baseX = mp.baseX !== undefined ? mp.baseX : platforms[mp.plat].x;
+    const baseY = mp.baseY !== undefined ? mp.baseY : platforms[mp.plat].y;
+    if (mp.axis === 'x' && platforms[mp.plat]) {
+      platforms[mp.plat].x = baseX + offset;
+    } else if (platforms[mp.plat]) {
+      platforms[mp.plat].y = baseY + offset;
     }
   });
 
