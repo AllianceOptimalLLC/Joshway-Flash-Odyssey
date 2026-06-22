@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JOSHWAY: FLASH ODYSSEY</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&amp;display=swap');
+    body {
+      margin: 0;
+      background: linear-gradient(#1a1408, #0a0f1f);
+      color: #fff;
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow: hidden;
+      min-height: 100vh;
+    }
+    .title {
+      font-size: 26px;
+      color: #facc15;
+      text-shadow: 4px 4px 0 #000, -2px -2px 0 #f97316;
+      margin: 6px 0 2px;
+      letter-spacing: 3px;
+    }
+    .hud {
+      font-size: 12px;
+      color: #4ade80;
+      margin: 2px 0;
+      text-shadow: 2px 2px 0 #000;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      background: rgba(0,0,0,0.6);
+      padding: 4px 18px;
+      border: 3px solid #facc15;
+      border-radius: 2px;
+    }
+    .hud span { color: #facc15; }
+    #game {
+      border: 6px solid #facc15;
+      image-rendering: pixelated;
+      box-shadow: 0 0 30px #facc15aa, 0 8px 0 #000;
+      background: #112;
+    }
+    .controls {
+      font-size: 9px;
+      margin: 4px 0 6px;
+      opacity: 0.85;
+      text-align: center;
+      line-height: 1.35;
+      color: #a5f3fc;
+    }
+    .overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      background: rgba(8,12,22,0.92);
+      font-size: 11px;
+    }
+    .overlay.active { display: flex; }
+    .panel {
+      background: #111a2a;
+      border: 6px solid #facc15;
+      padding: 18px 28px;
+      text-align: center;
+      max-width: 680px;
+      max-height: 88vh;
+      overflow: auto;
+      box-shadow: 0 0 50px rgba(0,0,0,0.9);
+      color: #e0f0ff;
+    }
+    .panel h1 { color: #facc15; font-size: 20px; margin: 4px 0 10px; text-shadow: 3px 3px 0 #000; }
+    .panel h2 { color: #f97316; font-size: 16px; margin: 6px 0; }
+    .btn {
+      background: #f97316;
+      color: #fff;
+      border: 4px solid #000;
+      padding: 8px 18px;
+      font-family: inherit;
+      font-size: 11px;
+      margin: 6px;
+      cursor: pointer;
+      box-shadow: 3px 3px 0 #000;
+      transition: all .05s;
+    }
+    .btn:hover { background: #facc15; color: #111; transform: translateY(-1px); }
+    .btn:active { transform: translateY(1px); }
+    .level-btn {
+      background: #1f2e4a;
+      border: 3px solid #4ade80;
+      color: #fff;
+      padding: 10px 16px;
+      font-size: 10px;
+      margin: 5px;
+      min-width: 180px;
+      display: inline-block;
+    }
+    .level-btn.locked { opacity: 0.5; border-color: #555; }
+    .level-btn.complete { border-color: #facc15; }
+    .story-text { font-size: 11px; line-height: 1.5; max-width: 560px; margin: 0 auto; text-align: left; color: #c5d8ff; }
+    .highscore-list { font-size: 11px; text-align: left; line-height: 1.6; margin: 8px 0; }
+    .recap { font-size: 10px; color: #facc15; margin: 10px 0; line-height: 1.45; }
+    .credits { font-size: 9px; color: #99aabb; margin-top: 12px; line-height: 1.5; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="title">★ JOSHWAY: FLASH ODYSSEY ★</div>
+
+  <div class="hud">
+    <span>LEVEL <span id="levelName">TEMPLE</span></span>
+    <span>ORBS <span id="orbs">00/12</span></span>
+    <span>LIVES <span id="lives">3</span></span>
+    <span>SCORE <span id="score">000000</span></span>
+    <span>TIME <span id="time">120</span></span>
+  </div>
+
+  <canvas id="game" width="800" height="480"></canvas>
+
+  <div class="controls">
+    ARROWS / WASD : MOVE &nbsp;•&nbsp; SPACE / W : JUMP (HOLD FOR HEIGHT) &nbsp;•&nbsp; SHIFT / S : CROUCH / ROLL &nbsp;•&nbsp; X : CAPE SWING / ATTACK<br>
+    E : POSSESS / INTERACT &nbsp;•&nbsp; P : PAUSE &nbsp;•&nbsp; R : RESTART LEVEL &nbsp;•&nbsp; M : MUTE<br>
+    INSPIRED BY FLASHBACK • ODDWORLD • PRINCE OF PERSIA &nbsp;|&nbsp; JOSHWAY'S COURAGE JOURNEY
+  </div>
+
+  <!-- TITLE SCREEN -->
+  <div id="title-overlay" class="overlay active">
+    <div class="panel">
+      <img src="/assets/title-banner.jpg" alt="Joshway Flash Odyssey" style="width:100%; max-width:620px; border:4px solid #facc15; margin-bottom:10px; image-rendering:pixelated;">
+      <h1>JOSHWAY: FLASH ODYSSEY</h1>
+      <p style="color:#facc15; margin:4px 0 12px;">A CINEMATIC PUZZLE PLATFORMER</p>
+      <button id="start-btn" class="btn" style="font-size:14px; padding:10px 32px;">BEGIN THE ODYSSEY</button>
+      <div style="margin-top:8px;">
+        <button id="story-btn" class="btn">THE STORY</button>
+        <button id="levels-btn" class="btn">LEVEL SELECT</button>
+        <button id="instructions-btn" class="btn">CONTROLS</button>
+        <button id="highscores-btn" class="btn">HIGH SCORES</button>
+      </div>
+      <p style="font-size:9px; opacity:0.7; margin-top:12px;">Use courage, cape, and wits. Collect all orbs. Master possession. Rise!</p>
+    </div>
+  </div>
+
+  <!-- STORY / INTRO -->
+  <div id="story-overlay" class="overlay">
+    <div class="panel">
+      <h2>JOSHWAY'S COURAGE JOURNEY</h2>
+      <div class="story-text">
+        In a world of forgotten temples and ancient powers, young Joshway — cape flowing like fire, heart full of bravery — sets out on the Flash Odyssey.<br><br>
+        Guided by the spirit of courage, he must collect the lost Courage Orbs hidden across perilous lands. Only by mastering precise jumps, clever possession of allies, and the swing of his cape can he overcome traps, guardians, and his own doubts.<br><br>
+        From the glowing Temple of Courage to the windswept Sky Bridges, down into the echoing Crystal Caverns, and finally the Sanctum of Shadows... Joshway will rise. The world needs a hero who dares.
+      </div>
+      <button id="story-back-btn" class="btn">RETURN TO TITLE</button>
+    </div>
+  </div>
+
+  <!-- LEVEL SELECT -->
+  <div id="level-select-overlay" class="overlay">
+    <div class="panel">
+      <h1>THE ODYSSEY AWAITS</h1>
+      <p style="color:#facc15;margin-bottom:10px;">COMPLETE LEVELS TO UNLOCK THE NEXT. COLLECT ALL ORBS FOR MAXIMUM COURAGE!</p>
+      <div id="level-buttons"></div>
+      <button id="levelselect-back-btn" class="btn">BACK TO TITLE</button>
+    </div>
+  </div>
+
+  <!-- PAUSE MENU -->
+  <div id="pause-overlay" class="overlay">
+    <div class="panel">
+      <h1>PAUSED</h1>
+      <p style="color:#facc15;">The courage within waits...</p>
+      <button id="resume-btn" class="btn">RESUME</button>
+      <button id="pause-restart-btn" class="btn">RESTART LEVEL</button>
+      <button id="pause-levels-btn" class="btn">LEVEL SELECT</button>
+      <button id="pause-quit-btn" class="btn" style="background:#3b82f6;">QUIT TO TITLE</button>
+    </div>
+  </div>
+
+  <!-- END / COMPLETE SCREEN -->
+  <div id="end-overlay" class="overlay">
+    <div class="panel">
+      <h1 id="end-title">LEVEL COMPLETE</h1>
+      <div id="end-stats" style="color:#4ade80;font-size:12px;margin:8px 0;line-height:1.5;"></div>
+      <div class="recap" id="end-recap"></div>
+      <div id="highscore-info" style="color:#facc15;font-size:10px;margin:6px 0;"></div>
+      <div style="margin-top:8px;">
+        <button id="next-level-btn" class="btn">NEXT LEVEL →</button>
+        <button id="retry-btn" class="btn">REPLAY LEVEL</button>
+        <button id="end-levels-btn" class="btn">LEVEL SELECT</button>
+        <button id="end-menu-btn" class="btn" style="background:#3b82f6;">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAME OVER -->
+  <div id="gameover-overlay" class="overlay">
+    <div class="panel">
+      <h1 style="color:#ef4444;">THE COURAGE FADES...</h1>
+      <p style="color:#facc15;">Joshway fell. But heroes always rise again.</p>
+      <div id="final-score-go" style="font-size:13px;margin:10px;color:#4ade80;"></div>
+      <button id="retry-go-btn" class="btn">TRY AGAIN</button>
+      <button id="menu-go-btn" class="btn" style="background:#3b82f6;">MAIN MENU</button>
+    </div>
+  </div>
+
+  <!-- INSTRUCTIONS -->
+  <div id="instructions-overlay" class="overlay">
+    <div class="panel" style="max-width:580px;text-align:left;">
+      <h2>CONTROLS &amp; TACTICS</h2>
+      <div style="font-size:10px;line-height:1.6;color:#c5d8ff;">
+        <b>MOVEMENT:</b> Arrows / WASD — precise platforming like Prince of Persia.<br>
+        <b>JUMP:</b> SPACE or W — HOLD longer for higher variable jumps. Release for short hops.<br>
+        <b>CROUCH / ROLL:</b> SHIFT or S — Duck under spinning saws. Hold while moving for a roll slide.<br>
+        <b>CAPE ATTACK:</b> X — Swing cape/sword to stun enemies and activate distant switches.<br>
+        <b>POSSESS (Oddworld style):</b> E near glowing allies or stunned foes — Take control temporarily to solve puzzles, reach levers, cross gaps. Time is limited!<br>
+        <b>SWITCHES &amp; LEVERS:</b> Walk close + E or hit with cape to toggle platforms, open doors.<br>
+        <b>ORBS:</b> Collect ALL courage orbs in each section to power the exit portal.<br>
+        <b>ENEMIES:</b> Jump-stomp grunts when falling. Roll under spinners or stun first.<br>
+        <b>SECRETS:</b> Hidden orbs behind tricky jumps or rolls reward the brave.<br><br>
+        <b>SCORING:</b> Orbs +100–200, defeats +250, secrets +400, time bonuses. Local high scores!
+      </div>
+      <button id="close-instructions" class="btn" style="margin-top:10px;">GOT IT — LET'S GO!</button>
+    </div>
+  </div>
+
+  <!-- CREDITS / FINAL VICTORY -->
+  <div id="credits-overlay" class="overlay">
+    <div class="panel">
+      <h1 style="color:#facc15;">THE ODYSSEY COMPLETE</h1>
+      <div class="recap" id="victory-recap">
+        Joshway proved his courage through temple ruins, across sky bridges, deep caverns and into the shadows.<br>
+        With cape billowing and heart unyielding, he restored the orbs and saved the lands.
+      </div>
+      <div class="credits">
+        A GROK CREATION • INSPIRED BY FLASHBACK, ODDWORLD &amp; PRINCE OF PERSIA<br>
+        JOSHWAY THEME BY MAGGIE ISAMOYER ART • COURAGE, CAPE &amp; HEROIC HEART<br>
+        ALL ASSETS &amp; CODE CRAFTED FOR THE JOURNEY • RETRO CINEMATIC PLATFORMING
+      </div>
+      <div style="margin:12px 0;color:#4ade80;font-size:11px;">FINAL SCORE: <span id="final-total-score">000000</span></div>
+      <button id="credits-menu-btn" class="btn">RETURN TO TITLE</button>
+      <button id="credits-replay-btn" class="btn">REPLAY THE ODYSSEY</button>
+    </div>
+  </div>
+
+  <!-- HIGH SCORES MODAL -->
+  <div id="highscores-modal" class="overlay">
+    <div class="panel" style="max-width:520px;">
+      <h2>HIGH SCORES</h2>
+      <div id="highscore-content" style="text-align:left; font-size:11px; line-height:1.7; margin:10px 0 16px;"></div>
+      <button id="close-highscores" class="btn">CLOSE</button>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

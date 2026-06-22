@@ -1,0 +1,13 @@
+{
+  "name": "joshway-flash-odyssey",
+  "version": "1.0.0",
+  "description": "Joshway: Flash Odyssey - Cinematic puzzle platformer like Flashback, Oddworld, and Prince of Persia",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
